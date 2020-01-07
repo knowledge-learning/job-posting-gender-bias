@@ -1,0 +1,10 @@
+version: "3"
+
+services:
+  streamlit:
+    image: "sestevez/job-postings"
+    build: "."
+    volumes:
+      - "./:/code"
+    network_mode: "host"
+    command: ["streamlit", "run", "gender_words.py"]

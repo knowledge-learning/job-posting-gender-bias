@@ -29,16 +29,11 @@ def load_words():
     return male_words, female_words
 
 
-def train_embedding(sentences):
-    model = FastText(sentences)
-    return model.wv
-
-
 if os.path.exists("w2v.bin"):
-    w2v: KeyedVectors = KeyedVectors.load("w2v.bin")
+    w2v = KeyedVectors.load("w2v.bin")
 else:
     with st.spinner("Downloading Embedding"):
-        w2v: KeyedVectors = api.load("glove-wiki-gigaword-100").wv
+        w2v = api.load("glove-wiki-gigaword-100").wv
         w2v.save("w2v.bin")
 
 
@@ -53,9 +48,8 @@ def evaluate_text(text):
     score = 0
 
     for i, tok in enumerate(tokens):
-        response = w2v.most_similar(positive=["women", tok], negative=["man"], topn=1)[
-            0
-        ][0]
+        response = w2v.most_similar(positive=["women", tok], negative=["man"], topn=1)
+        response = response[0][0]
         relation = wordnet_relation(tok, response)
 
         if relation == "antonym":
