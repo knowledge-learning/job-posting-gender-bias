@@ -13,6 +13,7 @@ from gensim.models import FastText, KeyedVectors
 from nltk.corpus import stopwords
 
 from nltk.corpus import wordnet
+from nltk.corpus import sentiwordnet as swn
 
 
 @st.cache
@@ -24,7 +25,7 @@ def load_monster():
 def load_words():
     df = pd.read_csv("data/words.csv")
     male_words = set(df["male"])
-    female_words = set(df["female"][:-1])
+    female_words = set(df["female"])
 
     return male_words, female_words
 
@@ -61,20 +62,6 @@ def evaluate_text(text):
 
     return score / len(tokens)
 
-
-IT_WORDS = set(
-    [
-        "software",
-        "program",
-        "programmer",
-        "code",
-        "python",
-        "c#",
-        "sql",
-        "microsoft",
-        "database",
-    ]
-)
 
 neutral_words = [
     "proven",
@@ -166,18 +153,31 @@ def wordnet_relation(w1, w2):
     return ""
 
 
-def word_analogy(words, possitive, negative):
+def get_swn_score(word):
+    synsets = list(swn.senti_synsets(word))
+
+    if not synsets:
+        return 0
+
+    sn = synsets[0]
+
+    return sn.pos_score() - sn.neg_score()
+
+
+def word_analogy(words, positive, negative):
     word_analogy = []
 
     for w in words:
         response = w2v.most_similar(
-            positive=[possitive, w], negative=[negative], topn=1
+            positive=[positive, w], negative=[negative], topn=1
         )[0][0]
         word_analogy.append(
             {
                 negative: w,
-                possitive: response,
+                positive: response,
                 "relation": wordnet_relation(w, response),
+                negative + "_score": get_swn_score(w),
+                positive + "_score": get_swn_score(response),
             }
         )
 
@@ -199,7 +199,7 @@ if section == "Classic Words":
     st.write(male_words)
     st.write(female_words)
 
-    st.write(word_analogy(["king", "programmer", "nerd", "doctor", "professor"], "woman", "man"))
+    st.write(word_analogy(["king", "boy", "programmer", "nerd", "doctor"], "woman", "man"))
     st.write(word_analogy(w2v_male_words, "woman", "man"))
     st.write(word_analogy(w2v_neutral_words, "woman", "man"))
     # st.write(word_analogy(w2v_female_words, "man", "woman"))
