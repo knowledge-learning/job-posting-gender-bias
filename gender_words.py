@@ -15,6 +15,8 @@ from gensim.models import FastText, KeyedVectors
 from nltk.corpus import sentiwordnet as swn
 from nltk.corpus import stopwords, wordnet
 from scipy.spatial.distance import cosine
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tree
+from sklearn.model_selection import train_test_split
 
 NEUTRAL_WORDS = [
     "proven",
@@ -167,14 +169,14 @@ class App:
 
         return sum((sn.pos_score() - sn.neg_score() for sn in synsets)) / len(synsets)
 
-    def get_alignment(self, positive, negative, pos_word, neg_word):
-        positive = self.w2v[positive]
-        negative = self.w2v[negative]
-        pos_word = self.w2v[pos_word]
-        neg_word = self.w2v[neg_word]
-        return cosine(pos_word - positive, neg_word - negative)
+    def get_alignment(self, gold_source, gold_target, query_source, query_target):
+        gold_source = self.w2v[gold_source]
+        query_source = self.w2v[query_source]
+        gold_target = self.w2v[gold_target]
+        query_target = self.w2v[query_target]
+        return 1 - cosine(gold_target - gold_source, query_target - query_source)
 
-    def word_analogy(self, words, positive, negative):
+    def word_analogy(self, words, positive, negative, categorical=False):
         word_analogy = []
 
         for w in words:
@@ -183,34 +185,106 @@ class App:
             )
             for response in query:
                 response = response[0]
-                word_analogy.append(
-                    {
-                        negative: w,
-                        positive: response,
-                        "relation": self.wordnet_relation(w, response),
-                        # negative + "_score": self.get_swn_score(w),
-                        # positive + "_score": self.get_swn_score(response),
-                        negative + "_mean_score": self.get_swn_mean_score(w),
-                        positive + "_mean_score": self.get_swn_mean_score(response),
-                        'alignment': self.get_alignment(positive, negative, w, response)
-                    }
-                )
+                info = {
+                    negative: w,
+                    positive: response,
+                    negative + "_mean_score": self.get_swn_mean_score(w),
+                    positive + "_mean_score": self.get_swn_mean_score(response),
+                    'alignment': self.get_alignment(positive, w, negative, response),
+                    'alignment-dual': self.get_alignment(positive, negative, w, response),
+                }
+                relation = self.wordnet_relation(w, response)
+                if categorical:
+                    if relation:
+                        info[relation] = 1
+                else:
+                    info['relation'] = relation
+                word_analogy.append(info)
 
         df = pd.DataFrame(word_analogy)
-        count = df[df["relation"] != None].count()
-
         return df
+
+    def score_similarity(self, words, *labels):
+        items = []
+        for word in words:
+            info = {'word': word}
+            for l in labels:
+                info[l] = self.w2v.similarity(word, l)
+            items.append(info)
+        return pd.DataFrame(items)
+
+    def score_triangle(self, words, categorical=False):
+        items = []
+        for word in words:
+            woman = self.w2v.most_similar(
+                positive=['woman', word], negative=['man'], topn=1
+            )[0][0]
+            man = self.w2v.most_similar(
+                positive=['man', word], negative=['woman'], topn=1
+            )[0][0]
+
+            info = {}
+            info['word'] = word
+            info['woman'] = woman
+            info['man'] = man
+
+            info['crossterm_similarity'] = self.w2v.similarity(woman, man)
+            info['woman_similarity'] = self.w2v.similarity(word, woman)
+            info['man_similarity'] = self.w2v.similarity(word, man)
+
+            crossterm_relation = self.wordnet_relation(woman, man)
+            woman_relation = self.wordnet_relation(word, woman)
+            man_relation = self.wordnet_relation(word, man)
+
+            if categorical:
+                if crossterm_relation: info[f'{crossterm_relation}_crossterm'] = 1
+                if woman_relation: info[f'{woman_relation}_woman'] = 1
+                if man_relation: info[f'{man_relation}_man'] = 1
+            else:
+                info['crossterm_relation'] = self.wordnet_relation(woman, man)
+                info['woman_relation'] = self.wordnet_relation(word, woman)
+                info['man_relation'] = self.wordnet_relation(word, man)
+
+            info['word_sentiment'] = self.get_swn_mean_score(word)
+            info['woman_sentiment'] = self.get_swn_mean_score(woman)
+            info['man_sentiment'] = self.get_swn_mean_score(man)
+            
+            items.append(info)
+        return pd.DataFrame(items)
 
     def run(self):
         tab.run('section', self)
+
+    @tab('section')
+    def similarity(self):
+        st.write('### Male')
+        st.write(self.score_similarity(self.w2v_male_words, 'man', 'woman'))
+        st.write('### Female')
+        st.write(self.score_similarity(self.w2v_female_words, 'man', 'woman'))
+        st.write('### Neutral')
+        st.write(self.score_similarity(self.w2v_neutral_words, 'man', 'woman'))
+
+    @tab('section')
+    def triangle(self):
+        st.write('### Selected')
+        st.write(self.score_triangle(["king", "boy", "programmer", "nerd", "doctor"]))
+        st.write('### Male')
+        st.write(self.score_triangle(self.w2v_male_words))
+        st.write('### Female')
+        st.write(self.score_triangle(self.w2v_female_words))
+        st.write('### Neutral')
+        st.write(self.score_triangle(self.w2v_neutral_words))
 
     @tab('section')
     def classic_words(self):
         st.show(set(self.w2v_male_words))
         st.show(set(self.w2v_female_words))
 
+        st.write('### Selected')
         st.write(self.word_analogy(
             ["king", "boy", "programmer", "nerd", "doctor"], "woman", "man"))
+        st.write(self.word_analogy(
+            ["king", "boy", "programmer", "nerd", "doctor"], "man", "woman"))
         st.write('### Male')
         st.write(self.word_analogy(self.w2v_male_words, "woman", "man"))
         st.write(self.word_analogy(self.w2v_male_words, "man", "woman"))
@@ -221,6 +295,63 @@ class App:
         st.write(self.word_analogy(self.w2v_neutral_words, "woman", "man"))
         st.write(self.word_analogy(self.w2v_neutral_words, "man", "woman"))
         # st.write(word_analogy(w2v_female_words, "man", "woman"))
+
+    @tab('section')
+    def decision_tree(self):
+
+        def get_data(words):
+            male2female = self.word_analogy(words, "woman", "man", True)
+            male2female = male2female[male2female.columns[2:]]
+            male2female = male2female.add_suffix('_A')
+
+            female2male = self.word_analogy(words, "woman", "man", True)
+            female2male = female2male[female2male.columns[2:]]
+            female2male = female2male.add_suffix('_B')
+
+            return pd.concat((male2female, female2male), axis=1)
+
+        def get_triangular_data(words):
+            data = self.score_triangle(words, True)
+            return data[data.columns[3:]]
+
+        def build_data(shuffle=True):
+            # X_male = get_data(self.w2v_male_words)
+            # X_female = get_data(self.w2v_female_words)
+            # X_neutral = get_data(self.w2v_neutral_words)
+
+            X_male = get_triangular_data(self.w2v_male_words)
+            X_female = get_triangular_data(self.w2v_female_words)
+            X_neutral = get_triangular_data(self.w2v_neutral_words)
+
+            X = pd.concat((X_male, X_female, X_neutral))
+            X.fillna(0, inplace=True)
+            X = X.to_numpy()
+
+            y_male = np.ones(len(X_male)) * -1.0
+            y_female = np.ones(len(X_female))
+            y_neutral = np.zeros(len(X_neutral))
+            y = np.concatenate((y_male, y_female, y_neutral))
+
+            if shuffle:
+                np.random.seed(0)
+                indexes = np.arange(len(X))
+                np.random.shuffle(indexes)
+
+                X = X[indexes]
+                y = y[indexes]
+
+            return X, y
+
+        X, y = build_data()
+        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
+
+        model = DecisionTreeClassifier(max_depth=3)
+        model.fit(X_train, y_train)
+        # st.show(plot_tree(model.tree_))
+        st.show(model.score(X_train, y_train))
+        st.show(model.score(X_test, y_test))
+
+        st.show(np.c_[y_test, model.predict(X_test)])
 
     @tab('section')
     def text_analysis(self):
