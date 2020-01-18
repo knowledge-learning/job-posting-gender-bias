@@ -7,4 +7,4 @@ services:
     volumes:
       - "./:/code"
     network_mode: "host"
-    command: ["streamlit", "run", "gender_words.py"]
+    command: ["streamlit", "run", "--browser.serverAddress", "localhost", "gender_words.py"]

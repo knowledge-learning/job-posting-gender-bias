@@ -5,6 +5,7 @@ import os
 import re
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -13,6 +14,7 @@ import nltk
 from gensim.models import FastText, KeyedVectors
 from nltk.corpus import sentiwordnet as swn
 from nltk.corpus import stopwords, wordnet
+from scipy.spatial.distance import cosine
 
 NEUTRAL_WORDS = [
     "proven",
@@ -157,22 +159,42 @@ class App:
 
         return sn.pos_score() - sn.neg_score()
 
+    def get_swn_mean_score(self, word):
+        synsets = list(swn.senti_synsets(word))
+
+        if not synsets:
+            return 0
+
+        return sum((sn.pos_score() - sn.neg_score() for sn in synsets)) / len(synsets)
+
+    def get_alignment(self, positive, negative, pos_word, neg_word):
+        positive = self.w2v[positive]
+        negative = self.w2v[negative]
+        pos_word = self.w2v[pos_word]
+        neg_word = self.w2v[neg_word]
+        return cosine(pos_word - positive, neg_word - negative)
+
     def word_analogy(self, words, positive, negative):
         word_analogy = []
 
         for w in words:
-            response = self.w2v.most_similar(
+            query = self.w2v.most_similar(
                 positive=[positive, w], negative=[negative], topn=1
-            )[0][0]
-            word_analogy.append(
-                {
-                    negative: w,
-                    positive: response,
-                    "relation": self.wordnet_relation(w, response),
-                    negative + "_score": self.get_swn_score(w),
-                    positive + "_score": self.get_swn_score(response),
-                }
             )
+            for response in query:
+                response = response[0]
+                word_analogy.append(
+                    {
+                        negative: w,
+                        positive: response,
+                        "relation": self.wordnet_relation(w, response),
+                        # negative + "_score": self.get_swn_score(w),
+                        # positive + "_score": self.get_swn_score(response),
+                        negative + "_mean_score": self.get_swn_mean_score(w),
+                        positive + "_mean_score": self.get_swn_mean_score(response),
+                        'alignment': self.get_alignment(positive, negative, w, response)
+                    }
+                )
 
         df = pd.DataFrame(word_analogy)
         count = df[df["relation"] != None].count()
@@ -189,8 +211,15 @@ class App:
 
         st.write(self.word_analogy(
             ["king", "boy", "programmer", "nerd", "doctor"], "woman", "man"))
+        st.write('### Male')
         st.write(self.word_analogy(self.w2v_male_words, "woman", "man"))
+        st.write(self.word_analogy(self.w2v_male_words, "man", "woman"))
+        st.write('### Female')
+        st.write(self.word_analogy(self.w2v_female_words, "man", "woman"))
+        st.write(self.word_analogy(self.w2v_female_words, "woman", "man"))
+        st.write('### Neutral')
         st.write(self.word_analogy(self.w2v_neutral_words, "woman", "man"))
+        st.write(self.word_analogy(self.w2v_neutral_words, "man", "woman"))
         # st.write(word_analogy(w2v_female_words, "man", "woman"))
 
     @tab('section')
