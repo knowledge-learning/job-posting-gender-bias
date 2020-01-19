@@ -17,7 +17,7 @@ from nltk.corpus import stopwords, wordnet
 from scipy.spatial.distance import cosine
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tree
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, LeaveOneOut
 
 NEUTRAL_WORDS = [
     "proven",
@@ -43,6 +43,13 @@ NEUTRAL_WORDS = [
     "results-oriented",
 ]
 
+def penn2morphy(penntag, returnNone=True):
+    morphy_tag = {'NN':wordnet.NOUN, 'JJ':wordnet.ADJ,
+                  'VB':wordnet.VERB, 'RB':wordnet.ADV}
+    try:
+        return morphy_tag[penntag[:2]]
+    except:
+        return None if returnNone else ''
 
 def tab(section):
     import collections
@@ -361,75 +368,14 @@ class App:
 
     @tab('section')
     def decision_tree(self):
+        model, columns = self._get_model()
 
-        # def get_data(words):
-        #     male2female = self.word_analogy(words, "woman", "man", True)
-        #     male2female = male2female[male2female.columns[2:]]
-        #     male2female = male2female.add_suffix('_A')
-
-        #     female2male = self.word_analogy(words, "woman", "man", True)
-        #     female2male = female2male[female2male.columns[2:]]
-        #     female2male = female2male.add_suffix('_B')
-
-        #     return pd.concat((male2female, female2male), axis=1)
-
-        def get_data(words):
-            data = self.score_triangle(words, True)
-            return data[data.columns[3:]]
-
-        def build_data(shuffle=True):
-            X_male = get_data(self.w2v_male_words)
-            X_female = get_data(self.w2v_female_words)
-            X_neutral = get_data(self.w2v_neutral_words)
-
-            X = pd.concat((X_male, X_female, X_neutral))
-            X.fillna(0, inplace=True)
-            st.show(X)
-
-            columns = X.columns
-            X = X.to_numpy()
-
-            y_male = np.ones(len(X_male))
-            y_female = np.zeros(len(X_female))
-            y_neutral = np.zeros(len(X_neutral))
-            y = np.concatenate((y_male, y_female, y_neutral))
-
-            if shuffle:
-                np.random.seed(0)
-                indexes = np.arange(len(X))
-                np.random.shuffle(indexes)
-
-                X = X[indexes]
-                y = y[indexes]
-
-            return X, y, columns
-
-        def standarize(data, columns):
-            df = pd.DataFrame(columns=columns)
-            for cname in data.columns:
-                df[cname] = data[cname]
-            return df
-
-        X, y, columns = build_data()
-        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.25)
-
-        st.show(X, y)
-
-        model = RandomForestClassifier(max_depth=5)
-        model.fit(X_train, y_train)
-        # st.show(plot_tree(model))
-        st.show(model.score(X_train, y_train))
-        st.show(model.score(X_test, y_test))
-
-        st.show(np.c_[y_test, model.predict(X_test)])
         for name, words, label in zip(
                 ['Male', 'Female', 'Neutral'],
                 [self.w2v_male_words, self.w2v_female_words, self.w2v_neutral_words],
                 [1, 0, 0]
             ):
-            x = standarize(get_data(words), columns)
-            x.fillna(0, inplace=True)
-            y_pred = model.predict(x)
+            y_pred = self._predict(model, columns, words)
             st.write(f'### {name}')
             st.write(
                 pd.concat(
@@ -438,6 +384,94 @@ class App:
                 )
             )
             st.write(f'{np.sum(y_pred == label)} / {len(words)}')
+    
+    @tab('section')
+    def validate_the_model(self):
+        for i in range(1, 10):
+            st.write(f'### Max depth = {i}')
+            self._validate_model(max_depth=i)
+
+    def _get_data(self, words):
+        data = self.score_triangle(words, True)
+        return data[data.columns[3:]]
+
+    def _build_input(self, *collections, columns=None):
+        Xs = [ self._get_data(words) for words in collections ]
+        X = pd.concat(Xs)
+        if columns is not None: X = self._standarize(X, columns)
+        X.fillna(0, inplace=True)
+        return X
+
+    def _build_training_data(self, shuffle=True):
+        X = self._build_input(
+                self.w2v_male_words,
+                self.w2v_female_words,
+                self.w2v_neutral_words
+        )
+        columns = X.columns
+
+        X = X.to_numpy()
+
+        y_male = np.ones(len(self.w2v_male_words))
+        y_female = np.zeros(len(self.w2v_female_words))
+        y_neutral = np.zeros(len(self.w2v_neutral_words))
+        y = np.concatenate((y_male, y_female, y_neutral))
+
+        if shuffle:
+            np.random.seed(0)
+            indexes = np.arange(len(X))
+            np.random.shuffle(indexes)
+
+            X = X[indexes]
+            y = y[indexes]
+
+        return X, y, columns
+
+    def _standarize(self, data, columns):
+        df = pd.DataFrame(columns=columns)
+        for cname in data.columns:
+            if cname in columns:
+                df[cname] = data[cname]
+        return df
+
+    def _get_model(self):
+        X, y, columns = self._build_training_data()
+        X_train, X_test, y_train, y_test = X, X, y, y
+        # X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.5)
+
+        model = self._train_model(X_train, y_train, max_depth=3)
+        st.show(model.score(X_train, y_train))
+        st.show(model.score(X_test, y_test))
+
+        return model, columns
+
+    def _train_model(self, X_train, y_train, **kargs):
+        model = RandomForestClassifier(**kargs)
+        model.fit(X_train, y_train)
+        return model
+
+    def _validate_model(self, **kargs):
+        loo = LeaveOneOut()
+        X, y, _ = self._build_training_data()
+        tests = []
+        progress = st.progress(0)
+        for train_index, test_index in loo.split(X):
+            X_train, X_test = X[train_index], X[test_index]
+            y_train, y_test = y[train_index], y[test_index]
+            model = self._train_model(X_train, y_train, **kargs)
+            tests.append(model.score(X_test, y_test))
+            progress.progress(len(tests) / len(X))
+
+        st.write(f'{sum(tests)} / {len(tests)}')
+        st.write(f'Average: {sum(tests) / len(tests)}')       
+
+    def _predict(self, model, columns, words):
+        x = self._build_input(words, columns=columns)
+        y_pred = model.predict(x)
+        return y_pred
+
+    def _predict_word(self, model, columns, word):
+        return self._predict(model, columns, [word])[0]
 
     @tab('section')
     def text_analysis(self):
