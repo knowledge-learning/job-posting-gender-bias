@@ -16,6 +16,7 @@ from nltk.corpus import sentiwordnet as swn
 from nltk.corpus import stopwords, wordnet
 from scipy.spatial.distance import cosine
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tree
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 NEUTRAL_WORDS = [
@@ -325,6 +326,8 @@ class App:
 
             X = pd.concat((X_male, X_female, X_neutral))
             X.fillna(0, inplace=True)
+            st.show(X)
+
             X = X.to_numpy()
 
             y_male = np.ones(len(X_male)) * -1.0
@@ -345,9 +348,11 @@ class App:
         X, y = build_data()
         X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
 
-        model = DecisionTreeClassifier(max_depth=3)
+        st.show(X, y)
+
+        model = RandomForestClassifier(max_depth=5)
         model.fit(X_train, y_train)
-        # st.show(plot_tree(model.tree_))
+        # st.show(plot_tree(model))
         st.show(model.score(X_train, y_train))
         st.show(model.score(X_test, y_test))
 
@@ -361,6 +366,31 @@ class App:
             "Job Posting Example", self.monster_data["job_description"][example]
         )
         st.write("### Imbalance Score", self.evaluate_text(text_input))
+
+    def evaluate_text(self, text):
+        tokens = nltk.wordpunct_tokenize(text.lower())
+        tokens = [w for w in tokens if w in self.w2v and w not in self.sw]
+
+        if not tokens:
+            return 0
+
+        progress = st.progress(0)
+        score = 0
+
+        for i, tok in enumerate(tokens):
+            response = self.w2v.most_similar(
+                positive=["women", tok], negative=["man"], topn=1)
+            response = response[0][0]
+            relation = self.wordnet_relation(tok, response)
+
+            if relation == "antonym":
+                score += 1.0
+            elif not relation:
+                score += 0.5
+
+            progress.progress((i + 1) / len(tokens))
+
+        return score / len(tokens)
 
     @tab('section')
     def overall_corpus(self):
@@ -436,31 +466,6 @@ class App:
         most_common = [w[0] for w in word_counter.most_common(100)]
         df = self.word_analogy(most_common, "women", "man")
         st.write(df)
-
-    def evaluate_text(self, text):
-        tokens = nltk.wordpunct_tokenize(text.lower())
-        tokens = [w for w in tokens if w in self.w2v and w not in self.sw]
-
-        if not tokens:
-            return 0
-
-        progress = st.progress(0)
-        score = 0
-
-        for i, tok in enumerate(tokens):
-            response = self.w2v.most_similar(
-                positive=["women", tok], negative=["man"], topn=1)
-            response = response[0][0]
-            relation = self.wordnet_relation(tok, response)
-
-            if relation == "antonym":
-                score += 1.0
-            elif not relation:
-                score += 0.5
-
-            progress.progress((i + 1) / len(tokens))
-
-        return score / len(tokens)
 
 
 app = App()
