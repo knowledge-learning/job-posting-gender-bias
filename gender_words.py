@@ -300,38 +300,35 @@ class App:
     @tab('section')
     def decision_tree(self):
 
+        # def get_data(words):
+        #     male2female = self.word_analogy(words, "woman", "man", True)
+        #     male2female = male2female[male2female.columns[2:]]
+        #     male2female = male2female.add_suffix('_A')
+
+        #     female2male = self.word_analogy(words, "woman", "man", True)
+        #     female2male = female2male[female2male.columns[2:]]
+        #     female2male = female2male.add_suffix('_B')
+
+        #     return pd.concat((male2female, female2male), axis=1)
+
         def get_data(words):
-            male2female = self.word_analogy(words, "woman", "man", True)
-            male2female = male2female[male2female.columns[2:]]
-            male2female = male2female.add_suffix('_A')
-
-            female2male = self.word_analogy(words, "woman", "man", True)
-            female2male = female2male[female2male.columns[2:]]
-            female2male = female2male.add_suffix('_B')
-
-            return pd.concat((male2female, female2male), axis=1)
-
-        def get_triangular_data(words):
             data = self.score_triangle(words, True)
             return data[data.columns[3:]]
 
         def build_data(shuffle=True):
-            # X_male = get_data(self.w2v_male_words)
-            # X_female = get_data(self.w2v_female_words)
-            # X_neutral = get_data(self.w2v_neutral_words)
-
-            X_male = get_triangular_data(self.w2v_male_words)
-            X_female = get_triangular_data(self.w2v_female_words)
-            X_neutral = get_triangular_data(self.w2v_neutral_words)
+            X_male = get_data(self.w2v_male_words)
+            X_female = get_data(self.w2v_female_words)
+            X_neutral = get_data(self.w2v_neutral_words)
 
             X = pd.concat((X_male, X_female, X_neutral))
             X.fillna(0, inplace=True)
             st.show(X)
 
+            columns = X.columns
             X = X.to_numpy()
 
-            y_male = np.ones(len(X_male)) * -1.0
-            y_female = np.ones(len(X_female))
+            y_male = np.ones(len(X_male))
+            y_female = np.zeros(len(X_female))
             y_neutral = np.zeros(len(X_neutral))
             y = np.concatenate((y_male, y_female, y_neutral))
 
@@ -343,10 +340,16 @@ class App:
                 X = X[indexes]
                 y = y[indexes]
 
-            return X, y
+            return X, y, columns
 
-        X, y = build_data()
-        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y)
+        def standarize(data, columns):
+            df = pd.DataFrame(columns=columns)
+            for cname in data.columns:
+                df[cname] = data[cname]
+            return df
+
+        X, y, columns = build_data()
+        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.25)
 
         st.show(X, y)
 
@@ -357,6 +360,22 @@ class App:
         st.show(model.score(X_test, y_test))
 
         st.show(np.c_[y_test, model.predict(X_test)])
+        for name, words, label in zip(
+                ['Male', 'Female', 'Neutral'],
+                [self.w2v_male_words, self.w2v_female_words, self.w2v_neutral_words],
+                [1, 0, 0]
+            ):
+            x = standarize(get_data(words), columns)
+            x.fillna(0, inplace=True)
+            y_pred = model.predict(x)
+            st.write(f'### {name}')
+            st.write(
+                pd.concat(
+                    (pd.DataFrame(y_pred, columns=['prediction']), self.score_triangle(words)),
+                    axis=1
+                )
+            )
+            st.write(f'{np.sum(y_pred == label)} / {len(words)}')
 
     @tab('section')
     def text_analysis(self):
