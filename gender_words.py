@@ -101,6 +101,31 @@ class App:
                 w2v.save("w2v.bin")
         return w2v
 
+    def get_word(self, word, pos, positive, negative, topn=10):
+        query = self.w2v.most_similar(
+            positive=[positive, word], negative=[negative], topn=topn
+        )
+        for lex, _ in query:
+            synset = self.get_synset(lex, pos)
+            if synset is not None:
+                return lex, synset
+        return lex, None
+
+    def get_synset(self, word, pos=None):
+        for s in swn.senti_synsets(word):
+            if pos is None or s.synset.pos() == pos:
+                return s
+        return None
+
+    def get_sentiment(self, synset):
+        return synset.pos_score() - synset.neg_score() if synset else 0
+
+    def get_name(self, synset):
+        return synset.synset.name().split('.')[0]
+
+    def get_pos(self, synset):
+        return synset.synset.pos()
+
     @staticmethod
     def get_hyponyms(synset):
         hyponyms = set()
@@ -149,6 +174,40 @@ class App:
                 for l in hyp.lemmas():
                     if l.name() == w2:
                         return "hyp"
+
+        return ""
+
+    def sn_wordnet_relation(self, sn_w1, sn_w2):
+        if sn_w1 is None or sn_w2 is None:
+            return ""
+
+        w1, w2 = self.get_name(sn_w1), self.get_name(sn_w2)
+        print(w1, w2)
+
+        sn_w1, sn_w2 = sn_w1.synset, sn_w2.synset
+
+        if w1.startswith(w2) or w2.startswith(w1):
+            return "synonim"
+
+        if sn_w1 == sn_w2:
+            return "synonim"
+
+        for l in sn_w1.lemmas():
+            for a in l.antonyms():
+                if a.name() == w2:
+                    return "antonym"
+
+        hyponyms = App.get_hyponyms(sn_w1)
+        for hyp in hyponyms:
+            for l in hyp.lemmas():
+                if l.name() == w2:
+                    return "hyp"
+
+        hypernyms = App.get_hypernyms(sn_w1)
+        for hyp in hypernyms:
+            for l in hyp.lemmas():
+                if l.name() == w2:
+                    return "hyp"
 
         return ""
 
@@ -217,12 +276,10 @@ class App:
     def score_triangle(self, words, categorical=False):
         items = []
         for word in words:
-            woman = self.w2v.most_similar(
-                positive=['woman', word], negative=['man'], topn=1
-            )[0][0]
-            man = self.w2v.most_similar(
-                positive=['man', word], negative=['woman'], topn=1
-            )[0][0]
+            sn_word = self.get_synset(word)
+            pos = self.get_pos(sn_word) if sn_word is not None else None
+            woman, sn_woman = self.get_word(word, pos, 'woman', 'man')
+            man, sn_man = self.get_word(word, pos, 'man', 'woman')
 
             info = {}
             info['word'] = word
@@ -233,28 +290,33 @@ class App:
             info['woman_similarity'] = self.w2v.similarity(word, woman)
             info['man_similarity'] = self.w2v.similarity(word, man)
 
-            crossterm_relation = self.wordnet_relation(woman, man)
-            woman_relation = self.wordnet_relation(word, woman)
-            man_relation = self.wordnet_relation(word, man)
+            crossterm_relation = self.sn_wordnet_relation(sn_woman, sn_man)
+            woman_relation = self.sn_wordnet_relation(sn_word, sn_woman)
+            man_relation = self.sn_wordnet_relation(sn_word, sn_man)
 
             if categorical:
                 if crossterm_relation: info[f'{crossterm_relation}_crossterm'] = 1
                 if woman_relation: info[f'{woman_relation}_woman'] = 1
                 if man_relation: info[f'{man_relation}_man'] = 1
             else:
-                info['crossterm_relation'] = self.wordnet_relation(woman, man)
-                info['woman_relation'] = self.wordnet_relation(word, woman)
-                info['man_relation'] = self.wordnet_relation(word, man)
+                info['crossterm_relation'] =  crossterm_relation
+                info['woman_relation'] = woman_relation
+                info['man_relation'] = man_relation
 
-            info['word_sentiment'] = self.get_swn_mean_score(word)
-            info['woman_sentiment'] = self.get_swn_mean_score(woman)
-            info['man_sentiment'] = self.get_swn_mean_score(man)
+            info['word_sentiment'] = self.get_sentiment(sn_word)
+            info['woman_sentiment'] = self.get_sentiment(sn_woman)
+            info['man_sentiment'] = self.get_sentiment(sn_man)
             
             items.append(info)
         return pd.DataFrame(items)
 
     def run(self):
         tab.run('section', self)
+
+    @tab('section')
+    def words(self):
+        st.show(self.get_word('king', 'n', 'woman', 'man'))
+        # st.show(self.get_synset('king', 'n'))
 
     @tab('section')
     def similarity(self):
