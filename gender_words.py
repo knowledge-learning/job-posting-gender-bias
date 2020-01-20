@@ -17,7 +17,7 @@ from nltk.corpus import stopwords, wordnet
 from scipy.spatial.distance import cosine
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tree
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, LeaveOneOut
+from sklearn.model_selection import train_test_split, LeaveOneOut, LeavePOut
 
 NEUTRAL_WORDS = [
     "proven",
@@ -257,8 +257,8 @@ class App:
                     positive: response,
                     negative + "_mean_score": self.get_swn_mean_score(w),
                     positive + "_mean_score": self.get_swn_mean_score(response),
-                    'alignment': self.get_alignment(positive, w, negative, response),
-                    'alignment-dual': self.get_alignment(positive, negative, w, response),
+                    'alignment': self.get_alignment(negative, w, positive, response),
+                    'alignment-dual': self.get_alignment(negative, positive, w, response),
                 }
                 relation = self.wordnet_relation(w, response)
                 if categorical:
@@ -313,6 +313,11 @@ class App:
             info['word_sentiment'] = self.get_sentiment(sn_word)
             info['woman_sentiment'] = self.get_sentiment(sn_woman)
             info['man_sentiment'] = self.get_sentiment(sn_man)
+
+            info['woman_alignment'] = self.get_alignment('man', word, 'woman', woman)
+            info['man_alignment'] = self.get_alignment('woman', word, 'man', man)
+            info['woman_alignment-dual'] = self.get_alignment('man', 'woman', word, woman)
+            info['man_alignment-dual'] = self.get_alignment('woman', 'man', word, man)
             
             items.append(info)
         return pd.DataFrame(items)
@@ -509,13 +514,33 @@ class App:
 
     @tab('section')
     def overall_corpus(self):
+        "### Most common words"
+
+        word_counter = self.get_filtered_tokens()
+        most_common = [w[0] for w in word_counter.most_common(100)]
+        df = self.word_analogy(most_common, "women", "man")
+        st.write(df)
+
+    @tab('section')
+    def percent(self):
+        word_counter = self.get_filtered_tokens()
+        for w in list(word_counter):
+            if w not in self.w2v:
+                word_counter.pop(w)
+        words = [w[0] for w in word_counter.most_common(100)]
+        st.write('### Training model ...')
+        model, columns = self._get_model()
+        st.write('### Predicting ...')
+        prediction = self._predict(model, columns, words)
+        st.write(f'### Biased: {sum(prediction)} / {len(prediction)} = {sum(prediction) / len(prediction)}')
+        biased = [w for w,p in zip(words, prediction) if p]
+        st.write(self.score_triangle(biased))
+
+    def get_filtered_tokens(self):
         "### Monster Dataset"
         st.write(self.monster_data.head())
 
-        "### Most common words"
-
         progress = st.progress(0)
-        avg = 0
         sample_size = st.slider(
             "Sample size", 0, len(self.monster_data), 1000)
         available_tags = [
@@ -578,10 +603,7 @@ class App:
             if w in word_counter:
                 word_counter.pop(w)
 
-        most_common = [w[0] for w in word_counter.most_common(100)]
-        df = self.word_analogy(most_common, "women", "man")
-        st.write(df)
-
+        return word_counter
 
 app = App()
 app.run()
