@@ -19,6 +19,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor, plot_tre
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, LeaveOneOut, LeavePOut
 
+
 NEUTRAL_WORDS = [
     "proven",
     "sound",
@@ -159,7 +160,7 @@ class App:
 
     @staticmethod
     def wordnet_relation(w1, w2):
-        print(w1, w2)
+        # print(w1, w2)
 
         if w1.startswith(w2) or w2.startswith(w1):
             return "synonim"
@@ -195,7 +196,7 @@ class App:
             return ""
 
         w1, w2 = self.get_name(sn_w1), self.get_name(sn_w2)
-        print(w1, w2)
+        # print(w1, w2)
 
         sn_w1, sn_w2 = sn_w1.synset, sn_w2.synset
 
@@ -288,10 +289,11 @@ class App:
             items.append(info)
         return pd.DataFrame(items)
 
-    def score_triangle(self, words, categorical=False):
+    def score_triangle(self, words, categorical=False, pos=None):
         items = []
         for word in words:
-            sn_word = self.get_synset(word)
+            # TODO: GENERALIZE FOR ANY POS
+            sn_word = self.get_synset(word, pos=pos)
             pos = self.get_pos(sn_word) if sn_word is not None else None
             woman, sn_woman = self.get_word(word, pos, "woman", "man")
             man, sn_man = self.get_word(word, pos, "man", "woman")
@@ -585,10 +587,13 @@ class App:
     @tab("section")
     def percent(self):
         word_counter = self.get_filtered_tokens()
-        for w in list(word_counter):
-            if w not in self.w2v:
-                word_counter.pop(w)
         words = [w[0] for w in word_counter.most_common(100)]
+
+        # TODO: GENERALIZE FOR ANY POS
+        df = self.score_triangle(words, pos=wordnet.ADJ)
+        st.write(df)
+        df.to_csv("adjectives_features.csv")
+
         st.write("### Training model ...")
         model, columns = self._get_model()
         st.write("### Predicting ...")
@@ -603,8 +608,7 @@ class App:
         "### Monster Dataset"
         st.write(self.monster_data.head())
 
-        progress = st.progress(0)
-        sample_size = st.slider("Sample size", 0, len(self.monster_data), 1000)
+        sample_size = st.number_input("Sample size", 0, len(self.monster_data), 1000)
         available_tags = [
             "CC",  # coordinating conjunction
             "CD",  # cardinal digit
@@ -647,8 +651,12 @@ class App:
             "Part-Of-Speech to include", available_tags, ["JJ", "VB"]
         )
 
+        return self.count_words_in_dataset(sample_size, pos_tags)
+
+    def count_words_in_dataset(self, sample_size, pos_tags):
         sw = stopwords.words()
         word_counter = collections.Counter()
+        progress = st.progress(0)
 
         for i, row in enumerate(self.monster_data[:sample_size].itertuples()):
             text = row.job_description
@@ -665,7 +673,160 @@ class App:
             if w in word_counter:
                 word_counter.pop(w)
 
+        for w in list(word_counter):
+            if w not in self.w2v:
+                word_counter.pop(w)
+
         return word_counter
+
+    def job_postings_containing(self, words):
+        sample_size = st.number_input(
+            "Number of job postings", 100, len(self.monster_data), 1000
+        )
+
+        total = 0
+
+        for job in self.monster_data[:sample_size].itertuples():
+            tokens = nltk.wordpunct_tokenize(job.job_description)
+
+            for t in tokens:
+                if t in words:
+                    total += 1
+                    break
+
+        return total, sample_size
+
+    def job_postings_histogram(self):
+        sample_size = st.number_input(
+            "Number of job postings",
+            100,
+            len(self.monster_data),
+            1000,
+            key="histogram_examples",
+        )
+
+        male = set(self.w2v_male_words)
+        female = set(self.w2v_female_words)
+
+        df = pd.DataFrame(columns=["total_words", "category"])
+
+        scale = alt.Scale(domain=["neutral", "biased"], range=["green", "red"])
+
+        chart = st.altair_chart(
+            alt.Chart(df)
+            .mark_bar()
+            .encode(
+                x=alt.X("total_words", bin=True, title="# of words"),
+                y=alt.Y("count()", stack=False, title="# of job postings"),
+                column=alt.Column("category"),
+                color=alt.Color("category", scale=scale),
+            )
+        )
+
+        for job in self.monster_data[:sample_size].itertuples():
+            tokens = nltk.wordpunct_tokenize(job.job_description)
+
+            male_total = 0
+            female_total = 0
+
+            for t in tokens:
+                if t in male:
+                    male_total += 1
+                if t in female:
+                    female_total += 1
+
+            chart.add_rows(
+                [
+                    dict(total_words=male_total, category="biased"),
+                    dict(total_words=female_total, category="neutral"),
+                ]
+            )
+
+    @tab("section")
+    def manual_word(self):
+        words = st.text_area("Words").split("\n")
+        st.write(self.score_triangle(words))
+
+    @tab("section")
+    def count_basic_words(self):
+        counter = self.get_filtered_tokens()
+
+        male_counts = collections.Counter(
+            {w: counter[w] for w in self.w2v_male_words if counter[w] > 0}
+        )
+        female_counts = collections.Counter(
+            {w: counter[w] for w in self.w2v_female_words if counter[w] > 0}
+        )
+
+        male_df = pd.DataFrame(
+            [dict(word=k, count=v) for k, v in male_counts.most_common(5)]
+        ).set_index("word")
+        st.table(male_df)
+        female_df = pd.DataFrame(
+            [dict(word=k, count=v) for k, v in female_counts.most_common(5)]
+        ).set_index("word")
+        st.table(female_df)
+
+        st.show(male_counts.most_common(5), female_counts.most_common(5))
+        # st.show(
+        #     len(male_counts),
+        #     len(female_counts),
+        #     sum(male_counts.values()),
+        #     sum(female_counts.values()),
+        # )
+
+        st.write("### Job postings with filtered words")
+        total, sample_size = self.job_postings_containing(
+            set(self.w2v_male_words) | set(self.w2v_female_words)
+        )
+        st.show(total, sample_size, 1 - total / sample_size)
+
+        self.job_postings_histogram()
+
+    @tab("section")
+    def heuristic_evaluation(self):
+        crossterm_relation = st.multiselect(
+            "Cross-Term Relation", ["", "synonim", "antonym", "hyp"]
+        )
+        woman_relation = st.multiselect(
+            "Woman Relation", ["", "synonim", "antonym", "hyp"]
+        )
+        man_relation = st.multiselect("Man Relation", ["", "synonim", "antonym", "hyp"])
+
+        def heuristic(word):
+            if word.crossterm_relation in crossterm_relation:
+                return True
+
+            if word.woman_relation in woman_relation:
+                return True
+
+            if word.man_relation in man_relation:
+                return True
+
+            return False
+
+        def score_words(words, pos=None):
+            df = self.score_triangle(words, pos=pos)
+            df["class"] = df.apply(heuristic, axis=1)
+
+            st.write(df)
+            st.write("### Percentage with category: %.2f" % (100 * df["class"].mean()))
+            st.write("### Mean similarity: %.2f" % (100 * df["crossterm_similarity"].mean()))
+            ws = df["woman_sentiment"] != df["man_sentiment"]
+            st.write("### Different sentiment: %.2f" % (100 * ws.mean()))
+
+        if st.checkbox("Use corpus words"):
+            sample_size = st.number_input("Sample size", 10, len(self.monster_data), 10)
+
+            for tag in "NN JJ VB".split():
+                st.write(f"### {tag}")
+                words = [w for w,_ in self.count_words_in_dataset(sample_size, [tag]).most_common(100)]
+                score_words(words, pos=penn2morphy(tag))
+
+        else:
+            score_words(self.w2v_male_words)
+            # score_words(self.w2v_female_words + self.w2v_neutral_words)
+            score_words(self.w2v_neutral_words)
 
 
 app = App()
