@@ -45,18 +45,22 @@ NEUTRAL_WORDS = [
 
 
 def penn2morphy(penntag, returnNone=True):
-    morphy_tag = {'NN': wordnet.NOUN, 'JJ': wordnet.ADJ,
-                  'VB': wordnet.VERB, 'RB': wordnet.ADV}
+    morphy_tag = {
+        "NN": wordnet.NOUN,
+        "JJ": wordnet.ADJ,
+        "VB": wordnet.VERB,
+        "RB": wordnet.ADV,
+    }
     try:
         return morphy_tag[penntag[:2]]
     except:
-        return None if returnNone else ''
+        return None if returnNone else ""
 
 
 def tab(section):
     import collections
 
-    if not hasattr(tab, '__tabs__'):
+    if not hasattr(tab, "__tabs__"):
         tab.__tabs__ = collections.defaultdict(dict)
 
         def run(sec, *args, **kwargs):
@@ -101,7 +105,7 @@ class App:
         return male_words, female_words
 
     @st.cache(allow_output_mutation=True)
-    def _load_embedding(self, ):
+    def _load_embedding(self,):
         if os.path.exists("w2v.bin"):
             w2v = KeyedVectors.load("w2v.bin")
         else:
@@ -130,7 +134,7 @@ class App:
         return synset.pos_score() - synset.neg_score() if synset else 0
 
     def get_name(self, synset):
-        return synset.synset.name().split('.')[0]
+        return synset.synset.name().split(".")[0]
 
     def get_pos(self, synset):
         return synset.synset.pos()
@@ -259,15 +263,17 @@ class App:
                     positive: response,
                     negative + "_mean_score": self.get_swn_mean_score(w),
                     positive + "_mean_score": self.get_swn_mean_score(response),
-                    'alignment': self.get_alignment(negative, w, positive, response),
-                    'alignment-dual': self.get_alignment(negative, positive, w, response),
+                    "alignment": self.get_alignment(negative, w, positive, response),
+                    "alignment-dual": self.get_alignment(
+                        negative, positive, w, response
+                    ),
                 }
                 relation = self.wordnet_relation(w, response)
                 if categorical:
                     if relation:
                         info[relation] = 1
                 else:
-                    info['relation'] = relation
+                    info["relation"] = relation
                 word_analogy.append(info)
 
         df = pd.DataFrame(word_analogy)
@@ -276,7 +282,7 @@ class App:
     def score_similarity(self, words, *labels):
         items = []
         for word in words:
-            info = {'word': word}
+            info = {"word": word}
             for l in labels:
                 info[l] = self.w2v.similarity(word, l)
             items.append(info)
@@ -287,17 +293,17 @@ class App:
         for word in words:
             sn_word = self.get_synset(word)
             pos = self.get_pos(sn_word) if sn_word is not None else None
-            woman, sn_woman = self.get_word(word, pos, 'woman', 'man')
-            man, sn_man = self.get_word(word, pos, 'man', 'woman')
+            woman, sn_woman = self.get_word(word, pos, "woman", "man")
+            man, sn_man = self.get_word(word, pos, "man", "woman")
 
             info = {}
-            info['word'] = word
-            info['woman'] = woman
-            info['man'] = man
+            info["word"] = word
+            info["woman"] = woman
+            info["man"] = man
 
-            info['crossterm_similarity'] = self.w2v.similarity(woman, man)
-            info['woman_similarity'] = self.w2v.similarity(word, woman)
-            info['man_similarity'] = self.w2v.similarity(word, man)
+            info["crossterm_similarity"] = self.w2v.similarity(woman, man)
+            info["woman_similarity"] = self.w2v.similarity(word, woman)
+            info["man_similarity"] = self.w2v.similarity(word, man)
 
             crossterm_relation = self.sn_wordnet_relation(sn_woman, sn_man)
             woman_relation = self.sn_wordnet_relation(sn_word, sn_woman)
@@ -305,114 +311,121 @@ class App:
 
             if categorical:
                 if crossterm_relation:
-                    info[f'{crossterm_relation}_crossterm'] = 1
+                    info[f"{crossterm_relation}_crossterm"] = 1
                 if woman_relation:
-                    info[f'{woman_relation}_woman'] = 1
+                    info[f"{woman_relation}_woman"] = 1
                 if man_relation:
-                    info[f'{man_relation}_man'] = 1
+                    info[f"{man_relation}_man"] = 1
             else:
-                info['crossterm_relation'] = crossterm_relation
-                info['woman_relation'] = woman_relation
-                info['man_relation'] = man_relation
+                info["crossterm_relation"] = crossterm_relation
+                info["woman_relation"] = woman_relation
+                info["man_relation"] = man_relation
 
-            info['word_sentiment'] = self.get_sentiment(sn_word)
-            info['woman_sentiment'] = self.get_sentiment(sn_woman)
-            info['man_sentiment'] = self.get_sentiment(sn_man)
+            info["word_sentiment"] = self.get_sentiment(sn_word)
+            info["woman_sentiment"] = self.get_sentiment(sn_woman)
+            info["man_sentiment"] = self.get_sentiment(sn_man)
 
-            info['woman_alignment'] = self.get_alignment(
-                'man', word, 'woman', woman)
-            info['man_alignment'] = self.get_alignment(
-                'woman', word, 'man', man)
-            info['woman_alignment-dual'] = self.get_alignment(
-                'man', 'woman', word, woman)
-            info['man_alignment-dual'] = self.get_alignment(
-                'woman', 'man', word, man)
+            info["woman_alignment"] = self.get_alignment("man", word, "woman", woman)
+            info["man_alignment"] = self.get_alignment("woman", word, "man", man)
+            info["woman_alignment-dual"] = self.get_alignment(
+                "man", "woman", word, woman
+            )
+            info["man_alignment-dual"] = self.get_alignment("woman", "man", word, man)
 
             items.append(info)
         return pd.DataFrame(items)
 
     def run(self):
-        tab.run('section', self)
+        tab.run("section", self)
 
-    @tab('section')
+    @tab("section")
     def words(self):
-        st.write('### Selected')
-        st.write(self.handcrafted_scores(
-            ["king", "boy", "programmer", "nerd", "doctor"], single='relation'))
-        st.write('### Male')
-        st.write(self.handcrafted_scores(self.w2v_male_words, single='relation'))
-        st.write('### Female')
-        st.write(self.handcrafted_scores(self.w2v_female_words, single='relation'))
-        st.write('### Neutral')
-        st.write(self.handcrafted_scores(self.w2v_neutral_words, single='relation'))
+        st.write("### Selected")
+        st.write(
+            self.handcrafted_scores(
+                ["king", "boy", "programmer", "nerd", "doctor"], single="relation"
+            )
+        )
+        st.write("### Male")
+        st.write(self.handcrafted_scores(self.w2v_male_words, single="relation"))
+        st.write("### Female")
+        st.write(self.handcrafted_scores(self.w2v_female_words, single="relation"))
+        st.write("### Neutral")
+        st.write(self.handcrafted_scores(self.w2v_neutral_words, single="relation"))
 
-    @tab('section')
+    @tab("section")
     def similarity(self):
-        st.write('### Male')
-        st.write(self.score_similarity(self.w2v_male_words, 'man', 'woman'))
-        st.write('### Female')
-        st.write(self.score_similarity(self.w2v_female_words, 'man', 'woman'))
-        st.write('### Neutral')
-        st.write(self.score_similarity(self.w2v_neutral_words, 'man', 'woman'))
+        st.write("### Male")
+        st.write(self.score_similarity(self.w2v_male_words, "man", "woman"))
+        st.write("### Female")
+        st.write(self.score_similarity(self.w2v_female_words, "man", "woman"))
+        st.write("### Neutral")
+        st.write(self.score_similarity(self.w2v_neutral_words, "man", "woman"))
 
-    @tab('section')
+    @tab("section")
     def triangle(self):
-        st.write('### Selected')
-        st.write(self.score_triangle(
-            ["king", "boy", "programmer", "nerd", "doctor"]))
-        st.write('### Male')
+        st.write("### Selected")
+        st.write(self.score_triangle(["king", "boy", "programmer", "nerd", "doctor"]))
+        st.write("### Male")
         st.write(self.score_triangle(self.w2v_male_words))
-        st.write('### Female')
+        st.write("### Female")
         st.write(self.score_triangle(self.w2v_female_words))
-        st.write('### Neutral')
+        st.write("### Neutral")
         st.write(self.score_triangle(self.w2v_neutral_words))
 
-    @tab('section')
+    @tab("section")
     def classic_words(self):
         st.show(set(self.w2v_male_words))
         st.show(set(self.w2v_female_words))
 
-        st.write('### Selected')
-        st.write(self.word_analogy(
-            ["king", "boy", "programmer", "nerd", "doctor"], "woman", "man"))
-        st.write(self.word_analogy(
-            ["king", "boy", "programmer", "nerd", "doctor"], "man", "woman"))
-        st.write('### Male')
+        st.write("### Selected")
+        st.write(
+            self.word_analogy(
+                ["king", "boy", "programmer", "nerd", "doctor"], "woman", "man"
+            )
+        )
+        st.write(
+            self.word_analogy(
+                ["king", "boy", "programmer", "nerd", "doctor"], "man", "woman"
+            )
+        )
+        st.write("### Male")
         st.write(self.word_analogy(self.w2v_male_words, "woman", "man"))
         st.write(self.word_analogy(self.w2v_male_words, "man", "woman"))
-        st.write('### Female')
+        st.write("### Female")
         st.write(self.word_analogy(self.w2v_female_words, "man", "woman"))
         st.write(self.word_analogy(self.w2v_female_words, "woman", "man"))
-        st.write('### Neutral')
+        st.write("### Neutral")
         st.write(self.word_analogy(self.w2v_neutral_words, "woman", "man"))
         st.write(self.word_analogy(self.w2v_neutral_words, "man", "woman"))
         # st.write(word_analogy(w2v_female_words, "man", "woman"))
 
-    @tab('section')
+    @tab("section")
     def decision_tree(self):
         model, columns = self._get_model()
 
         for name, words, label in zip(
-            ['Male', 'Female', 'Neutral'],
-            [self.w2v_male_words, self.w2v_female_words,
-             self.w2v_neutral_words],
-            [1, 0, 0]
+            ["Male", "Female", "Neutral"],
+            [self.w2v_male_words, self.w2v_female_words, self.w2v_neutral_words],
+            [1, 0, 0],
         ):
             y_pred = self._predict(model, columns, words)
-            st.write(f'### {name}')
+            st.write(f"### {name}")
             st.write(
                 pd.concat(
-                    (pd.DataFrame(y_pred, columns=[
-                     'prediction']), self.score_triangle(words)),
-                    axis=1
+                    (
+                        pd.DataFrame(y_pred, columns=["prediction"]),
+                        self.score_triangle(words),
+                    ),
+                    axis=1,
                 )
             )
-            st.write(f'{np.sum(y_pred == label)} / {len(words)}')
+            st.write(f"{np.sum(y_pred == label)} / {len(words)}")
 
-    @tab('section')
+    @tab("section")
     def validate_the_model(self):
         for i in range(1, 10):
-            st.write(f'### Max depth = {i}')
+            st.write(f"### Max depth = {i}")
             self._validate_model(max_depth=i)
 
     def _get_data(self, words):
@@ -429,9 +442,7 @@ class App:
 
     def _build_training_data(self, shuffle=True):
         X = self._build_input(
-            self.w2v_male_words,
-            self.w2v_female_words,
-            self.w2v_neutral_words
+            self.w2v_male_words, self.w2v_female_words, self.w2v_neutral_words
         )
         columns = X.columns
 
@@ -487,8 +498,8 @@ class App:
             tests.append(model.score(X_test, y_test))
             progress.progress(len(tests) / len(X))
 
-        st.write(f'{sum(tests)} / {len(tests)}')
-        st.write(f'Average: {sum(tests) / len(tests)}')
+        st.write(f"{sum(tests)} / {len(tests)}")
+        st.write(f"Average: {sum(tests) / len(tests)}")
 
     def _predict(self, model, columns, words):
         x = self._build_input(words, columns=columns)
@@ -498,10 +509,9 @@ class App:
     def _predict_word(self, model, columns, word):
         return self._predict(model, columns, [word])[0]
 
-    @tab('section')
+    @tab("section")
     def text_analysis(self):
-        example = st.number_input(
-            "Example number", 0, len(self.monster_data) - 1, 0)
+        example = st.number_input("Example number", 0, len(self.monster_data) - 1, 0)
         text_input = st.text_area(
             "Job Posting Example", self.monster_data["job_description"][example]
         )
@@ -519,7 +529,8 @@ class App:
 
         for i, tok in enumerate(tokens):
             response = self.w2v.most_similar(
-                positive=["women", tok], negative=["man"], topn=1)
+                positive=["women", tok], negative=["man"], topn=1
+            )
             response = response[0][0]
             relation = self.wordnet_relation(tok, response)
 
@@ -533,32 +544,36 @@ class App:
         return score / len(tokens)
 
     def score_relation(self, relation):
-        return 1. if relation == 'antonym' else 0.5 if not relation else 0
+        return 1.0 if relation == "antonym" else 0.5 if not relation else 0
 
     def handcrafted_scores(self, words, pos_list=None, single=None):
         items = []
         for i, word in enumerate(words):
-            info = {'word': word}
-            handcrafted = self.single_handcrafted_score(word, pos_list[i] if pos_list else None)
-            handcrafted = { k:v for k,v in handcrafted.items() if single is None or k == single }
+            info = {"word": word}
+            handcrafted = self.single_handcrafted_score(
+                word, pos_list[i] if pos_list else None
+            )
+            handcrafted = {
+                k: v for k, v in handcrafted.items() if single is None or k == single
+            }
             info.update(handcrafted)
             items.append(info)
         return pd.DataFrame(items)
 
     def single_handcrafted_score(self, word, pos=None):
-        woman, sn_woman = self.get_word(word, pos, 'woman', 'man')
+        woman, sn_woman = self.get_word(word, pos, "woman", "man")
         man, sn_man = word, self.get_synset(word, pos)
         # man, sn_man = self.get_word(word, pos, 'man', 'woman')
 
         info = {
-            'similarity': self.w2v.similarity(woman, man),
-            'sentiment': self.get_sentiment(sn_woman) - self.get_sentiment(sn_man),
-            'relation': self.score_relation(self.sn_wordnet_relation(sn_woman, sn_man))
+            "similarity": self.w2v.similarity(woman, man),
+            "sentiment": self.get_sentiment(sn_woman) - self.get_sentiment(sn_man),
+            "relation": self.score_relation(self.sn_wordnet_relation(sn_woman, sn_man)),
         }
 
         return info
 
-    @tab('section')
+    @tab("section")
     def overall_corpus(self):
         "### Most common words"
 
@@ -567,19 +582,20 @@ class App:
         df = self.word_analogy(most_common, "women", "man")
         st.write(df)
 
-    @tab('section')
+    @tab("section")
     def percent(self):
         word_counter = self.get_filtered_tokens()
         for w in list(word_counter):
             if w not in self.w2v:
                 word_counter.pop(w)
         words = [w[0] for w in word_counter.most_common(100)]
-        st.write('### Training model ...')
+        st.write("### Training model ...")
         model, columns = self._get_model()
-        st.write('### Predicting ...')
+        st.write("### Predicting ...")
         prediction = self._predict(model, columns, words)
         st.write(
-            f'### Biased: {sum(prediction)} / {len(prediction)} = {sum(prediction) / len(prediction)}')
+            f"### Biased: {sum(prediction)} / {len(prediction)} = {sum(prediction) / len(prediction)}"
+        )
         biased = [w for w, p in zip(words, prediction) if p]
         st.write(self.score_triangle(biased))
 
@@ -588,22 +604,21 @@ class App:
         st.write(self.monster_data.head())
 
         progress = st.progress(0)
-        sample_size = st.slider(
-            "Sample size", 0, len(self.monster_data), 1000)
+        sample_size = st.slider("Sample size", 0, len(self.monster_data), 1000)
         available_tags = [
-            "CC",   # coordinating conjunction
-            "CD",   # cardinal digit
-            "DT",   # determiner
+            "CC",  # coordinating conjunction
+            "CD",  # cardinal digit
+            "DT",  # determiner
             # existential there (like: "there is" ... think of it like "there exists")
             "EX",
-            "FW",   # foreign word
-            "IN",   # preposition/subordinating conjunction
-            "JJ",   # adjective 'big'
+            "FW",  # foreign word
+            "IN",  # preposition/subordinating conjunction
+            "JJ",  # adjective 'big'
             "JJR",  # adjective, comparative 'bigger'
             "JJS",  # adjective, superlative 'biggest'
-            "LS",   # list marker 1)
-            "MD",   # modal could, will
-            "NN",   # noun, singular 'desk'
+            "LS",  # list marker 1)
+            "MD",  # modal could, will
+            "NN",  # noun, singular 'desk'
             "NNS",  # noun plural 'desks'
             "NNP",  # proper noun, singular 'Harrison'
             "NNPS",  # proper noun, plural 'Americans'
@@ -611,20 +626,20 @@ class App:
             "POS",  # possessive ending parent's
             "PRP",  # personal pronoun I, he, she
             "PRP$",  # possessive pronoun my, his, hers
-            "RB",   # adverb very, silently,
+            "RB",  # adverb very, silently,
             "RBR",  # adverb, comparative better
             "RBS",  # adverb, superlative best
-            "RP",   # particle give up
-            "TO",   # to go 'to' the store.
-            "UH",   # interjection errrrrrrrm
-            "VB",   # verb, base form take
+            "RP",  # particle give up
+            "TO",  # to go 'to' the store.
+            "UH",  # interjection errrrrrrrm
+            "VB",  # verb, base form take
             "VBD",  # verb, past tense took
             "VBG",  # verb, gerund/present participle taking
             "VBN",  # verb, past participle taken
             "VBP",  # verb, sing. present, non-3d take
             "VBZ",  # verb, 3rd person sing. present takes
             "WDT",  # wh-determiner which
-            "WP",   # wh-pronoun who, what
+            "WP",  # wh-pronoun who, what
             "WP$",  # possessive wh-pronoun whose
             "WRB",  # wh-abverb where, when
         ]
