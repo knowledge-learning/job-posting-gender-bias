@@ -43,13 +43,15 @@ NEUTRAL_WORDS = [
     "results-oriented",
 ]
 
+
 def penn2morphy(penntag, returnNone=True):
-    morphy_tag = {'NN':wordnet.NOUN, 'JJ':wordnet.ADJ,
-                  'VB':wordnet.VERB, 'RB':wordnet.ADV}
+    morphy_tag = {'NN': wordnet.NOUN, 'JJ': wordnet.ADJ,
+                  'VB': wordnet.VERB, 'RB': wordnet.ADV}
     try:
         return morphy_tag[penntag[:2]]
     except:
         return None if returnNone else ''
+
 
 def tab(section):
     import collections
@@ -302,11 +304,14 @@ class App:
             man_relation = self.sn_wordnet_relation(sn_word, sn_man)
 
             if categorical:
-                if crossterm_relation: info[f'{crossterm_relation}_crossterm'] = 1
-                if woman_relation: info[f'{woman_relation}_woman'] = 1
-                if man_relation: info[f'{man_relation}_man'] = 1
+                if crossterm_relation:
+                    info[f'{crossterm_relation}_crossterm'] = 1
+                if woman_relation:
+                    info[f'{woman_relation}_woman'] = 1
+                if man_relation:
+                    info[f'{man_relation}_man'] = 1
             else:
-                info['crossterm_relation'] =  crossterm_relation
+                info['crossterm_relation'] = crossterm_relation
                 info['woman_relation'] = woman_relation
                 info['man_relation'] = man_relation
 
@@ -314,11 +319,15 @@ class App:
             info['woman_sentiment'] = self.get_sentiment(sn_woman)
             info['man_sentiment'] = self.get_sentiment(sn_man)
 
-            info['woman_alignment'] = self.get_alignment('man', word, 'woman', woman)
-            info['man_alignment'] = self.get_alignment('woman', word, 'man', man)
-            info['woman_alignment-dual'] = self.get_alignment('man', 'woman', word, woman)
-            info['man_alignment-dual'] = self.get_alignment('woman', 'man', word, man)
-            
+            info['woman_alignment'] = self.get_alignment(
+                'man', word, 'woman', woman)
+            info['man_alignment'] = self.get_alignment(
+                'woman', word, 'man', man)
+            info['woman_alignment-dual'] = self.get_alignment(
+                'man', 'woman', word, woman)
+            info['man_alignment-dual'] = self.get_alignment(
+                'woman', 'man', word, man)
+
             items.append(info)
         return pd.DataFrame(items)
 
@@ -327,8 +336,15 @@ class App:
 
     @tab('section')
     def words(self):
-        st.show(self.get_word('king', 'n', 'woman', 'man'))
-        # st.show(self.get_synset('king', 'n'))
+        st.write('### Selected')
+        st.write(self.handcrafted_scores(
+            ["king", "boy", "programmer", "nerd", "doctor"], single='relation'))
+        st.write('### Male')
+        st.write(self.handcrafted_scores(self.w2v_male_words, single='relation'))
+        st.write('### Female')
+        st.write(self.handcrafted_scores(self.w2v_female_words, single='relation'))
+        st.write('### Neutral')
+        st.write(self.handcrafted_scores(self.w2v_neutral_words, single='relation'))
 
     @tab('section')
     def similarity(self):
@@ -342,7 +358,8 @@ class App:
     @tab('section')
     def triangle(self):
         st.write('### Selected')
-        st.write(self.score_triangle(["king", "boy", "programmer", "nerd", "doctor"]))
+        st.write(self.score_triangle(
+            ["king", "boy", "programmer", "nerd", "doctor"]))
         st.write('### Male')
         st.write(self.score_triangle(self.w2v_male_words))
         st.write('### Female')
@@ -376,20 +393,22 @@ class App:
         model, columns = self._get_model()
 
         for name, words, label in zip(
-                ['Male', 'Female', 'Neutral'],
-                [self.w2v_male_words, self.w2v_female_words, self.w2v_neutral_words],
-                [1, 0, 0]
-            ):
+            ['Male', 'Female', 'Neutral'],
+            [self.w2v_male_words, self.w2v_female_words,
+             self.w2v_neutral_words],
+            [1, 0, 0]
+        ):
             y_pred = self._predict(model, columns, words)
             st.write(f'### {name}')
             st.write(
                 pd.concat(
-                    (pd.DataFrame(y_pred, columns=['prediction']), self.score_triangle(words)),
+                    (pd.DataFrame(y_pred, columns=[
+                     'prediction']), self.score_triangle(words)),
                     axis=1
                 )
             )
             st.write(f'{np.sum(y_pred == label)} / {len(words)}')
-    
+
     @tab('section')
     def validate_the_model(self):
         for i in range(1, 10):
@@ -401,17 +420,18 @@ class App:
         return data[data.columns[3:]]
 
     def _build_input(self, *collections, columns=None):
-        Xs = [ self._get_data(words) for words in collections ]
+        Xs = [self._get_data(words) for words in collections]
         X = pd.concat(Xs)
-        if columns is not None: X = self._standarize(X, columns)
+        if columns is not None:
+            X = self._standarize(X, columns)
         X.fillna(0, inplace=True)
         return X
 
     def _build_training_data(self, shuffle=True):
         X = self._build_input(
-                self.w2v_male_words,
-                self.w2v_female_words,
-                self.w2v_neutral_words
+            self.w2v_male_words,
+            self.w2v_female_words,
+            self.w2v_neutral_words
         )
         columns = X.columns
 
@@ -468,7 +488,7 @@ class App:
             progress.progress(len(tests) / len(X))
 
         st.write(f'{sum(tests)} / {len(tests)}')
-        st.write(f'Average: {sum(tests) / len(tests)}')       
+        st.write(f'Average: {sum(tests) / len(tests)}')
 
     def _predict(self, model, columns, words):
         x = self._build_input(words, columns=columns)
@@ -512,6 +532,32 @@ class App:
 
         return score / len(tokens)
 
+    def score_relation(self, relation):
+        return 1. if relation == 'antonym' else 0.5 if not relation else 0
+
+    def handcrafted_scores(self, words, pos_list=None, single=None):
+        items = []
+        for i, word in enumerate(words):
+            info = {'word': word}
+            handcrafted = self.single_handcrafted_score(word, pos_list[i] if pos_list else None)
+            handcrafted = { k:v for k,v in handcrafted.items() if single is None or k == single }
+            info.update(handcrafted)
+            items.append(info)
+        return pd.DataFrame(items)
+
+    def single_handcrafted_score(self, word, pos=None):
+        woman, sn_woman = self.get_word(word, pos, 'woman', 'man')
+        man, sn_man = word, self.get_synset(word, pos)
+        # man, sn_man = self.get_word(word, pos, 'man', 'woman')
+
+        info = {
+            'similarity': self.w2v.similarity(woman, man),
+            'sentiment': self.get_sentiment(sn_woman) - self.get_sentiment(sn_man),
+            'relation': self.score_relation(self.sn_wordnet_relation(sn_woman, sn_man))
+        }
+
+        return info
+
     @tab('section')
     def overall_corpus(self):
         "### Most common words"
@@ -532,8 +578,9 @@ class App:
         model, columns = self._get_model()
         st.write('### Predicting ...')
         prediction = self._predict(model, columns, words)
-        st.write(f'### Biased: {sum(prediction)} / {len(prediction)} = {sum(prediction) / len(prediction)}')
-        biased = [w for w,p in zip(words, prediction) if p]
+        st.write(
+            f'### Biased: {sum(prediction)} / {len(prediction)} = {sum(prediction) / len(prediction)}')
+        biased = [w for w, p in zip(words, prediction) if p]
         st.write(self.score_triangle(biased))
 
     def get_filtered_tokens(self):
@@ -604,6 +651,7 @@ class App:
                 word_counter.pop(w)
 
         return word_counter
+
 
 app = App()
 app.run()
